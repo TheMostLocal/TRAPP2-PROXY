@@ -28,6 +28,20 @@ const HOSTS = {
 };
 const KEY_PARAMS = [...new Set(Object.values(HOSTS).map(h => h.param))];
 
+// z142.1: the vendor URL. The app sends it encoded (?u=https%3A…); typed into the address bar it arrives raw,
+// and its own & parameters would be split off - so a raw u= takes everything after it.
+function target(req) {
+  const raw = String(req.url || '');
+  const m = /[?&]u=/.exec(raw);
+  if (!m) return String((req.query && req.query.u) || '');
+  let t = raw.slice(m.index + 3);
+  if (/^https?%3A/i.test(t)) {
+    const amp = t.indexOf('&');
+    try { t = decodeURIComponent(amp >= 0 ? t.slice(0, amp) : t); } catch { return ''; }
+  }
+  return t;
+}
+
 function origins() {
   return String(process.env.ALLOWED_ORIGINS || 'https://themostlocal.github.io').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
 }
@@ -44,8 +58,16 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
   if (!okOrigin) return res.status(403).json({ error: `origin ${origin} not allowed` });
 
+  const t = target(req);
+  if (!t) {
+    // health check: /api/v with no u → which vendor keys are set (true / false only - never a key)
+    const configured = {};
+    for (const h of Object.values(HOSTS)) configured[h.env] = !!process.env[h.env];
+    return res.status(200).json({ proxy: 'valuatio key proxy', ok: true, allowedOrigins: origins(), configured,
+                                  usage: '/api/v?u=https://finnhub.io/api/v1/quote?symbol=AAPL' });
+  }
   let u;
-  try { u = new URL(String((req.query && req.query.u) || '')); } catch { return res.status(400).json({ error: 'pass the vendor URL as ?u=' }); }
+  try { u = new URL(t); } catch { return res.status(400).json({ error: 'pass the vendor URL as ?u=' }); }
   const h = HOSTS[u.hostname];
   if (u.protocol !== 'https:' || !h) return res.status(403).json({ error: `host ${u.hostname} is not a supported vendor` });
   const key = process.env[h.env];
