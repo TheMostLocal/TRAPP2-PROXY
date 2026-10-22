@@ -1,0 +1,6 @@
+{
+  "name": "trapp2-proxy",
+  "private": true,
+  "description": "Valuatio key proxy - vendor API keys live only in Vercel environment variables (z142)",
+  "engines": { "node": ">=18" }
+}
